@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use ggez::{graphics::{self, DrawParam}, Context, GameResult};
 
 use crate::{util::Point2, Textures};
@@ -5,19 +6,19 @@ use crate::{util::Point2, Textures};
 use super::Object;
 
 #[derive(Debug, Clone)]
-pub struct TexBoxData {
-    pub texture: Box<str>,
+pub struct TexBoxData<'a> {
+    pub texture: &'a str,
     pub pos: Point2,
     pub rot: f32,
 }
 
-pub struct TexBox {
-    pub data: TexBoxData,
+pub struct TexBox<'a> {
+    pub data: TexBoxData<'a>,
     update_fn: Box<dyn FnMut(&mut TexBoxData, f32)>
 }
 
-impl TexBox {
-    pub fn new<F: 'static + FnMut(&mut TexBoxData, f32)>(data: TexBoxData, update: F) -> Self {
+impl<'a> TexBox<'a> {
+    pub fn new<F: 'static + FnMut(&mut TexBoxData, f32)>(data: TexBoxData<'a>, update: F) -> Self {
         TexBox {
             data,
             update_fn: Box::new(update),
@@ -25,7 +26,7 @@ impl TexBox {
     }
 }
 
-impl Object for TexBox {
+impl Object for TexBox<'_> {
     fn update(&mut self, delta: f32) {
         (self.update_fn)(&mut self.data, delta)
     }

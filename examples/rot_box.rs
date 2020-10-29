@@ -15,7 +15,7 @@ impl Game for Empty {
 
         s.object_set.add(TexBox::new(
             TexBoxData {
-                texture: "box".into(),
+                texture: "box",
                 pos: Point2::new(w / 2., h / 2.),
                 rot: 0.,
             }, |data, delta| {
