@@ -47,7 +47,8 @@ impl Borrow<ObjectId> for HashedPointer<dyn Object> {
     }
 }
 impl<T: ?Sized> Eq for HashedPointer<T> {}
-
+// TODO maybe use an unsafe cell instead, to avoid undefined behaviour from optimisations
+// in iter_mut
 pub struct ObjectSet {
     set: HashSet<HashedPointer<dyn Object>>,
 }
