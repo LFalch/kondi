@@ -47,6 +47,7 @@ pub mod util {
 
 pub mod textures;
 pub mod object;
+pub mod sstr;
 
 use textures::Textures;
 
