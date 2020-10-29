@@ -10,7 +10,17 @@ edition = "2018"
 ggez = "0.5.1"
 log = "0.4"
 byteorder = "1"
+lazy_static = "1"
 
 [dependencies.nalgebra]
 version = "0.23"
 features = ["mint"]
+
+[profile.dev]
+opt-level = 2
+
+[profile.test]
+opt-level = 2
+
+[profile.release]
+lto = true
