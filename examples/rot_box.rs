@@ -11,18 +11,17 @@ struct Empty;
 
 impl Game for Empty {
     fn setup(_: &mut Context, s: &mut State) -> GgezResult<Self> {
+        let (w, h) = s.dims();
+
         s.object_set.add(TexBox::new(
             TexBoxData {
                 texture: "box".into(),
-                pos: Point2::new(400., 400.),
+                pos: Point2::new(w / 2., h / 2.),
                 rot: 0.,
             }, |data, delta| {
                 data.rot += 0.4 * delta;
             }
         ));
         Ok(Empty)
-    }
-    fn tick(&mut self, _: &mut State) -> GgezResult {
-        Ok(())
     }
 }

@@ -5,15 +5,19 @@
 #[macro_use]
 extern crate log;
 
-pub use ggez::{Context, GameError as GgezError, GameResult as GgezResult};
+pub use ggez::{self, Context, GameError as GgezError, GameResult as GgezResult};
 pub use ggez::conf::{WindowSetup, WindowMode};
+
+use nalgebra::Matrix4;
 
 use ggez::{
     ContextBuilder,
     event::{run, EventHandler},
-    graphics,
+    graphics::{self, Rect, Color, BLACK},
     timer,
 };
+
+use self::util::{Vector2, Point2};
 
 pub mod util {
     use ggez::graphics::Color;
@@ -140,14 +144,32 @@ use object::ObjectSet;
 pub struct State {
     pub textures: Textures,
     pub object_set: ObjectSet,
+    pub offset: Vector2,
+    width: f32,
+    height: f32,
+    pub background: Color,
 }
 
 impl State {
     fn new(ctx: &mut Context) -> GgezResult<Self> {
+        let Rect {w: width, h: height, ..} = graphics::screen_coordinates(ctx);
         Ok(State {
             textures: Textures::new(ctx)?,
             object_set: ObjectSet::new(),
+            offset: Vector2::new(0., 0.),
+            width,
+            height,
+            background: BLACK,
         })
+    }
+    /// Sets the offset so that the given point will be centered on the screen
+    #[inline]
+    pub fn focus_on(&mut self, p: Point2) {
+        self.offset = -p.coords + 0.5 * Vector2::new(self.width, self.height);
+    }
+    #[inline(always)]
+    pub fn dims(&self) -> (f32, f32) {
+        (self.width, self.height)
     }
 }
 
@@ -162,20 +184,30 @@ pub(crate) const DELTA: f32 = 1. / DESIRED_FPS as f32;
 
 impl<G: Game> EventHandler for GameState<G> {
     fn update(&mut self, ctx: &mut Context) -> GgezResult {
+        self.game.logic(&mut self.state)?;
+
         while timer::check_update_time(ctx, DESIRED_FPS) {
             for obj in self.state.object_set.iter_mut() {
                 obj.update(DELTA);
             }
+            self.game.tick(&mut self.state)?;
         }
-        self.game.tick(&mut self.state)?;
         Ok(())
     }
     fn draw(&mut self, ctx: &mut Context) -> GgezResult {
-        graphics::clear(ctx, (33, 33, 255, 255).into());
+        graphics::clear(ctx, self.state.background);
+
+        graphics::push_transform(ctx, Some(Matrix4::new_translation(&self.state.offset.fixed_resize(0.))));
+        graphics::apply_transformations(ctx)?;
         
         for obj in self.state.object_set.iter() {
             obj.draw(ctx, &self.state.textures)?;
         }
+        self.game.draw(ctx, &self.state)?;
+
+        // Pop the offset tranformation to draw the UI on the screen
+        graphics::pop_transform(ctx);
+        graphics::apply_transformations(ctx)?;
 
         // Flip the buffers to see what we just drew
         graphics::present(ctx)?;
@@ -183,6 +215,11 @@ impl<G: Game> EventHandler for GameState<G> {
         // Give the computer some time to do other things
         timer::yield_now();
         Ok(())
+    }
+    fn quit_event(&mut self, _ctx: &mut Context) -> bool { false }
+    fn resize_event(&mut self, _ctx: &mut Context, width: f32, height: f32) {
+        self.state.width = width;
+        self.state.height = height;
     }
 }
 
@@ -199,6 +236,16 @@ impl From<GgezError> for Error {
 }
 
 pub trait Game: Sized {
+    /// Run to create the game
     fn setup(ctx: &mut Context, state: &mut State) -> GgezResult<Self>;
-    fn tick(&mut self, state: &mut State) -> GgezResult;
+    /// This is run every once in a while
+    fn logic(&mut self, _state: &mut State) -> GgezResult { Ok(()) }
+    /// This is run every tick
+    fn tick(&mut self, _state: &mut State) -> GgezResult { Ok(()) }
+    /// This function should draw other things on the screen
+    /// that follow the offset
+    fn draw(&self, _ctx: &mut Context, _state: &State) -> GgezResult { Ok(()) }
+    /// This should draw things on top of the what's drawn in `draw`
+    /// and that do not follow the offset
+    fn draw_hud(&self, _ctx: &mut Context, _state: &State) -> GgezResult { Ok(()) }
 }
