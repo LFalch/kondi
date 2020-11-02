@@ -5,6 +5,9 @@
 #[macro_use]
 extern crate log;
 
+use std::ops::{Deref, DerefMut};
+use std::collections::HashMap;
+
 pub use ggez::{self, Context, GameError as GgezError, GameResult as GgezResult};
 pub use ggez::conf::{WindowSetup, WindowMode};
 
@@ -12,7 +15,7 @@ use nalgebra::Matrix4;
 
 use ggez::{
     ContextBuilder,
-    event::{run, EventHandler},
+    event::{run, EventHandler, KeyCode, KeyMods},
     graphics::{self, Rect, Color, BLACK},
     timer,
 };
@@ -126,10 +129,17 @@ impl ContextConfiguration {
             }
         }
 
-        let mut state = State::new(&mut ctx)?;
+        
+        let mut setup = GameStateSetup::<G> {
+            state: State::new(&mut ctx)?,
+            handlers: Handlers::new(),
+        };
+        let game = Game::setup(&mut ctx, &mut setup)?;
+        let GameStateSetup {state, handlers} = setup;
 
         let mut handler = GameState::<G> {
-            game: Game::setup(&mut ctx, &mut state)?,
+            game,
+            handlers,
             state,
         };
 
@@ -141,16 +151,21 @@ impl ContextConfiguration {
 
 use object::ObjectSet;
 
-pub struct State {
+pub type KeyHandler<G> = Box<dyn FnMut(&mut Context, &mut G, &mut State) -> GgezResult>;
+
+pub struct State<'a> {
     pub textures: Textures,
     pub object_set: ObjectSet,
     pub offset: Vector2,
     width: f32,
     height: f32,
     pub background: Color,
+
+    error: Option<GgezError>,
+    key_to_name: HashMap<KeyCode, &'a str>,
 }
 
-impl State {
+impl<'a> State<'a> {
     fn new(ctx: &mut Context) -> GgezResult<Self> {
         let Rect {w: width, h: height, ..} = graphics::screen_coordinates(ctx);
         Ok(State {
@@ -160,6 +175,8 @@ impl State {
             width,
             height,
             background: BLACK,
+            error: None,
+            key_to_name: HashMap::new(),
         })
     }
     /// Sets the offset so that the given point will be centered on the screen
@@ -171,10 +188,72 @@ impl State {
     pub fn dims(&self) -> (f32, f32) {
         (self.width, self.height)
     }
+    #[inline]
+    pub fn bind_key(&mut self, key: KeyCode, name: &'a str) {
+        self.key_to_name.insert(key, name);
+    }
+    #[inline]
+    pub fn bind_keys(&mut self, name: &'a str, keys: Vec<KeyCode>) {
+        for key in keys {
+            self.bind_key(key, name);
+        }
+    }
 }
 
-struct GameState<G: Game> {
-    state: State,
+struct Handlers<'a, G: Game> {
+    key_up_handlers: HashMap<&'a str, KeyHandler<G>>,
+    key_down_handlers: HashMap<&'a str, KeyHandler<G>>,
+    key_press_handlers: HashMap<&'a str, KeyHandler<G>>,
+}
+
+impl<'a, G: Game> Handlers<'a, G> {
+    #[inline]
+    fn new() -> Self {
+        Handlers {
+            key_up_handlers: HashMap::new(),
+            key_down_handlers: HashMap::new(),
+            key_press_handlers: HashMap::new(),
+        }
+    }
+}
+
+pub struct GameStateSetup<'a, G: Game> {
+    pub state: State<'a>,
+    handlers: Handlers<'a, G>,
+}
+
+impl<'a, G: Game> GameStateSetup<'a, G> {
+    #[inline]
+    pub fn add_key_up_handler(&mut self, name: &'a str, handler: KeyHandler<G>) {
+        self.handlers.key_up_handlers.insert(name, handler);
+    }
+    #[inline]
+    pub fn add_key_down_handler(&mut self, name: &'a str, handler: KeyHandler<G>) {
+        self.handlers.key_down_handlers.insert(name, handler);
+    }
+    #[inline]
+    pub fn add_key_press_handler(&mut self, name: &'a str, handler: KeyHandler<G>) {
+        self.handlers.key_press_handlers.insert(name, handler);
+    }
+}
+
+impl<'a, G: Game> Deref for GameStateSetup<'a, G> {
+    type Target = State<'a>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.state
+    }
+}
+impl<'a, G: Game> DerefMut for GameStateSetup<'a, G> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.state
+    }
+}
+
+struct GameState<'a, G: Game> {
+    state: State<'a>,
+    handlers: Handlers<'a, G>,
     game: G,
 }
 
@@ -182,8 +261,11 @@ const DESIRED_FPS: u32 = 60;
 
 pub(crate) const DELTA: f32 = 1. / DESIRED_FPS as f32;
 
-impl<G: Game> EventHandler for GameState<G> {
+impl<G: Game> EventHandler for GameState<'_, G> {
     fn update(&mut self, ctx: &mut Context) -> GgezResult {
+        if let Some(error) = self.state.error.take() {
+            return Err(error);
+        }
         self.game.logic(&mut self.state)?;
 
         while timer::check_update_time(ctx, DESIRED_FPS) {
@@ -199,7 +281,7 @@ impl<G: Game> EventHandler for GameState<G> {
 
         graphics::push_transform(ctx, Some(Matrix4::new_translation(&self.state.offset.fixed_resize(0.))));
         graphics::apply_transformations(ctx)?;
-        
+
         for obj in self.state.object_set.iter() {
             obj.draw(ctx, &self.state.textures)?;
         }
@@ -221,6 +303,31 @@ impl<G: Game> EventHandler for GameState<G> {
         self.state.width = width;
         self.state.height = height;
     }
+    fn key_up_event(&mut self, ctx: &mut Context, keycode: KeyCode, _keymods: KeyMods) {
+        if let Some(&name) = self.state.key_to_name.get(&keycode) {
+            if let Some(handler) = self.handlers.key_up_handlers.get_mut(name) {
+                if let Err(e) = handler(ctx, &mut self.game, &mut self.state) {
+                    self.state.error = Some(e);
+                }
+            }
+        }
+    }
+    fn key_down_event(&mut self, ctx: &mut Context, keycode: KeyCode, _keymods: KeyMods, repeat: bool) {
+        if let Some(&name) = self.state.key_to_name.get(&keycode) {
+            if !repeat {
+                if let Some(handler) = self.handlers.key_down_handlers.get_mut(name) {
+                    if let Err(e) = handler(ctx, &mut self.game, &mut self.state) {
+                        self.state.error = Some(e);
+                    }
+                }
+            }
+            if let Some(handler) = self.handlers.key_press_handlers.get_mut(name) {
+                if let Err(e) = handler(ctx, &mut self.game, &mut self.state) {
+                    self.state.error = Some(e);
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -237,7 +344,7 @@ impl From<GgezError> for Error {
 
 pub trait Game: Sized {
     /// Run to create the game
-    fn setup(ctx: &mut Context, state: &mut State) -> GgezResult<Self>;
+    fn setup(ctx: &mut Context, state: &mut GameStateSetup<Self>) -> GgezResult<Self>;
     /// This is run every once in a while
     fn logic(&mut self, _state: &mut State) -> GgezResult { Ok(()) }
     /// This is run every tick

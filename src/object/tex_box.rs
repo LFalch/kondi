@@ -26,7 +26,7 @@ impl<'a> TexBox<'a> {
     }
 }
 
-impl Object for TexBox<'_> {
+impl Object for TexBox<'static> {
     fn update(&mut self, delta: f32) {
         (self.update_fn)(&mut self.data, delta)
     }

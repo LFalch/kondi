@@ -1,4 +1,4 @@
-use kondi::{ContextConfiguration, Context, Game, State, GgezResult};
+use kondi::{ContextConfiguration, Context, Game, GameStateSetup, GgezResult};
 
 fn main() {
     ContextConfiguration::new()
@@ -9,7 +9,7 @@ fn main() {
 struct Empty;
 
 impl Game for Empty {
-    fn setup(_: &mut Context, _: &mut State) -> GgezResult<Self> {
+    fn setup(_: &mut Context, _: &mut GameStateSetup<Self>) -> GgezResult<Self> {
         Ok(Empty)
     }
 }
