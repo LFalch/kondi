@@ -30,14 +30,14 @@ impl Game for RotBoxGame {
                 texture: "box",
                 pos: Point2::new(w / 2., h / 2.),
                 rot: 0.,
-            }, |data, delta| {
+            }, |data, _, _, delta| {
                 data.rot += 0.4 * delta;
             }
         ));
 
         // set a handler for the change key
-        s.add_key_press_handler(CHANGE_KEY, Box::new(|_ctx, game, state| {
-            let rot_box = state.object_set.get_mut(game.rot_box).unwrap();
+        s.add_key_press_handler(CHANGE_KEY, Box::new(|_ctx, game, _, object_set| {
+            let rot_box = object_set.get_mut(game.rot_box).unwrap();
 
             rot_box.data.rot -= 2.;
 

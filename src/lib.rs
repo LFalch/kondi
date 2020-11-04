@@ -6,7 +6,7 @@
 extern crate log;
 
 use std::ops::{Deref, DerefMut};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub use ggez::{self, Context, GameError as GgezError, GameResult as GgezResult};
 pub use ggez::conf::{WindowSetup, WindowMode};
@@ -17,6 +17,7 @@ use ggez::{
     ContextBuilder,
     event::{run, EventHandler, KeyCode, KeyMods},
     graphics::{self, Rect, Color, BLACK},
+    input::keyboard,
     timer,
 };
 
@@ -132,14 +133,16 @@ impl ContextConfiguration {
         
         let mut setup = GameStateSetup::<G> {
             state: State::new(&mut ctx)?,
+            object_set: ObjectSet::new(),
             handlers: Handlers::new(),
         };
         let game = Game::setup(&mut ctx, &mut setup)?;
-        let GameStateSetup {state, handlers} = setup;
+        let GameStateSetup {state, object_set, handlers} = setup;
 
         let mut handler = GameState::<G> {
             game,
             handlers,
+            object_set,
             state,
         };
 
@@ -151,11 +154,11 @@ impl ContextConfiguration {
 
 use object::ObjectSet;
 
-pub type KeyHandler<G> = Box<dyn FnMut(&mut Context, &mut G, &mut State) -> GgezResult>;
+pub type KeyHandler<G> = Box<dyn FnMut(&mut Context, &mut G, &mut State, &mut ObjectSet) -> GgezResult>;
 
+#[derive(Debug)]
 pub struct State<'a> {
     pub textures: Textures,
-    pub object_set: ObjectSet,
     pub offset: Vector2,
     width: f32,
     height: f32,
@@ -163,6 +166,7 @@ pub struct State<'a> {
 
     error: Option<GgezError>,
     key_to_name: HashMap<KeyCode, &'a str>,
+    name_to_keys: HashMap<&'a str, HashSet<KeyCode>>
 }
 
 impl<'a> State<'a> {
@@ -170,13 +174,13 @@ impl<'a> State<'a> {
         let Rect {w: width, h: height, ..} = graphics::screen_coordinates(ctx);
         Ok(State {
             textures: Textures::new(ctx)?,
-            object_set: ObjectSet::new(),
             offset: Vector2::new(0., 0.),
             width,
             height,
             background: BLACK,
             error: None,
             key_to_name: HashMap::new(),
+            name_to_keys: HashMap::new(),
         })
     }
     /// Sets the offset so that the given point will be centered on the screen
@@ -191,11 +195,23 @@ impl<'a> State<'a> {
     #[inline]
     pub fn bind_key(&mut self, key: KeyCode, name: &'a str) {
         self.key_to_name.insert(key, name);
+        self.name_to_keys.entry(name).or_insert_with(HashSet::new).insert(key);
     }
     #[inline]
     pub fn bind_keys(&mut self, name: &'a str, keys: Vec<KeyCode>) {
-        for key in keys {
-            self.bind_key(key, name);
+        for &key in &keys {
+            self.key_to_name.insert(key, name);
+        }
+        self.name_to_keys.entry(name).or_insert_with(HashSet::new).extend(keys);
+    }
+    #[inline]
+    pub fn is_down(&self, ctx: &Context, name: &str) -> bool {
+        if let Some(keys_for_name) = self.name_to_keys.get(name) {
+            keyboard::pressed_keys(&ctx)
+                .intersection(keys_for_name)
+                .all(|_| false)
+        } else {
+            false
         }
     }
 }
@@ -219,6 +235,7 @@ impl<'a, G: Game> Handlers<'a, G> {
 
 pub struct GameStateSetup<'a, G: Game> {
     pub state: State<'a>,
+    pub object_set: ObjectSet,
     handlers: Handlers<'a, G>,
 }
 
@@ -253,6 +270,7 @@ impl<'a, G: Game> DerefMut for GameStateSetup<'a, G> {
 
 struct GameState<'a, G: Game> {
     state: State<'a>,
+    pub object_set: ObjectSet,
     handlers: Handlers<'a, G>,
     game: G,
 }
@@ -269,8 +287,8 @@ impl<G: Game> EventHandler for GameState<'_, G> {
         self.game.logic(&mut self.state)?;
 
         while timer::check_update_time(ctx, DESIRED_FPS) {
-            for obj in self.state.object_set.iter_mut() {
-                obj.update(DELTA);
+            for obj in self.object_set.iter_mut() {
+                obj.update(ctx, &mut self.state, DELTA);
             }
             self.game.tick(&mut self.state)?;
         }
@@ -282,7 +300,7 @@ impl<G: Game> EventHandler for GameState<'_, G> {
         graphics::push_transform(ctx, Some(Matrix4::new_translation(&self.state.offset.fixed_resize(0.))));
         graphics::apply_transformations(ctx)?;
 
-        for obj in self.state.object_set.iter() {
+        for obj in self.object_set.iter() {
             obj.draw(ctx, &self.state.textures)?;
         }
         self.game.draw(ctx, &self.state)?;
@@ -306,7 +324,7 @@ impl<G: Game> EventHandler for GameState<'_, G> {
     fn key_up_event(&mut self, ctx: &mut Context, keycode: KeyCode, _keymods: KeyMods) {
         if let Some(&name) = self.state.key_to_name.get(&keycode) {
             if let Some(handler) = self.handlers.key_up_handlers.get_mut(name) {
-                if let Err(e) = handler(ctx, &mut self.game, &mut self.state) {
+                if let Err(e) = handler(ctx, &mut self.game, &mut self.state, &mut self.object_set) {
                     self.state.error = Some(e);
                 }
             }
@@ -316,13 +334,13 @@ impl<G: Game> EventHandler for GameState<'_, G> {
         if let Some(&name) = self.state.key_to_name.get(&keycode) {
             if !repeat {
                 if let Some(handler) = self.handlers.key_down_handlers.get_mut(name) {
-                    if let Err(e) = handler(ctx, &mut self.game, &mut self.state) {
+                    if let Err(e) = handler(ctx, &mut self.game, &mut self.state, &mut self.object_set) {
                         self.state.error = Some(e);
                     }
                 }
             }
             if let Some(handler) = self.handlers.key_press_handlers.get_mut(name) {
-                if let Err(e) = handler(ctx, &mut self.game, &mut self.state) {
+                if let Err(e) = handler(ctx, &mut self.game, &mut self.state, &mut self.object_set) {
                     self.state.error = Some(e);
                 }
             }

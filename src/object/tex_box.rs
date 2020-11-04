@@ -1,3 +1,4 @@
+use crate::State;
 use std::fmt::Debug;
 use ggez::{graphics::{self, DrawParam}, Context, GameResult};
 
@@ -14,11 +15,11 @@ pub struct TexBoxData<'a> {
 
 pub struct TexBox<'a> {
     pub data: TexBoxData<'a>,
-    update_fn: Box<dyn FnMut(&mut TexBoxData, f32)>
+    update_fn: Box<dyn FnMut(&mut TexBoxData, &mut Context, &mut State, f32)>
 }
 
 impl<'a> TexBox<'a> {
-    pub fn new<F: 'static + FnMut(&mut TexBoxData, f32)>(data: TexBoxData<'a>, update: F) -> Self {
+    pub fn new<F: 'static + FnMut(&mut TexBoxData, &mut Context, &mut State, f32)>(data: TexBoxData<'a>, update: F) -> Self {
         TexBox {
             data,
             update_fn: Box::new(update),
@@ -27,8 +28,8 @@ impl<'a> TexBox<'a> {
 }
 
 impl Object for TexBox<'static> {
-    fn update(&mut self, delta: f32) {
-        (self.update_fn)(&mut self.data, delta)
+    fn update(&mut self, ctx: &mut Context, state: &mut State, delta: f32) {
+        (self.update_fn)(&mut self.data, ctx, state, delta)
     }
     #[inline]
     fn draw(&self, ctx: &mut Context, t: &Textures) -> GameResult<()> {

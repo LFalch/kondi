@@ -1,3 +1,4 @@
+use crate::State;
 use std::borrow::Borrow;
 use std::fmt::{self, Debug};
 use std::collections::HashSet;
@@ -162,7 +163,7 @@ use super::Textures;
 pub trait Object {
     fn draw(&self, ctx: &mut Context, texes: &Textures) -> GameResult<()>;
     // Add State ref here
-    fn update(&mut self, delta: f32);
+    fn update(&mut self, ctx: &mut Context, state: &mut State, delta: f32);
 }
 
 pub mod tex_box;

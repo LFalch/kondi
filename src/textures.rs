@@ -7,6 +7,7 @@ use ggez::{Context, GameResult, GameError};
 use ggez::graphics::{Image, Font, Text, TextFragment, Drawable, DrawParam, Scale};
 
 /// All the assets
+#[derive(Debug)]
 pub struct Textures {
     texes: RefCell<HashMap<String, Image>>,
     /// The font used for all the text
