@@ -209,7 +209,7 @@ impl<'a> State<'a> {
         if let Some(keys_for_name) = self.name_to_keys.get(name) {
             keyboard::pressed_keys(&ctx)
                 .intersection(keys_for_name)
-                .all(|_| false)
+                .any(|_| true)
         } else {
             false
         }
@@ -284,13 +284,13 @@ impl<G: Game> EventHandler for GameState<'_, G> {
         if let Some(error) = self.state.error.take() {
             return Err(error);
         }
-        self.game.logic(&mut self.state)?;
+        self.game.logic(ctx, &mut self.state, &mut self.object_set)?;
 
         while timer::check_update_time(ctx, DESIRED_FPS) {
             for obj in self.object_set.iter_mut() {
                 obj.update(ctx, &mut self.state, DELTA);
             }
-            self.game.tick(&mut self.state)?;
+            self.game.tick(ctx, &mut self.state, &mut self.object_set, DELTA)?;
         }
         Ok(())
     }
@@ -303,7 +303,7 @@ impl<G: Game> EventHandler for GameState<'_, G> {
         for obj in self.object_set.iter() {
             obj.draw(ctx, &self.state.textures)?;
         }
-        self.game.draw(ctx, &self.state)?;
+        self.game.draw(ctx, &self.state, &self.object_set)?;
 
         // Pop the offset tranformation to draw the UI on the screen
         graphics::pop_transform(ctx);
@@ -364,13 +364,13 @@ pub trait Game: Sized {
     /// Run to create the game
     fn setup(ctx: &mut Context, state: &mut GameStateSetup<Self>) -> GgezResult<Self>;
     /// This is run every once in a while
-    fn logic(&mut self, _state: &mut State) -> GgezResult { Ok(()) }
+    fn logic(&mut self, _: &mut Context, _: &mut State, _: &mut ObjectSet) -> GgezResult { Ok(()) }
     /// This is run every tick
-    fn tick(&mut self, _state: &mut State) -> GgezResult { Ok(()) }
+    fn tick(&mut self, _: &mut Context, _: &mut State, _: &mut ObjectSet, _delta: f32) -> GgezResult { Ok(()) }
     /// This function should draw other things on the screen
     /// that follow the offset
-    fn draw(&self, _ctx: &mut Context, _state: &State) -> GgezResult { Ok(()) }
+    fn draw(&self, _ctx: &mut Context, _state: &State, _: &ObjectSet) -> GgezResult { Ok(()) }
     /// This should draw things on top of the what's drawn in `draw`
     /// and that do not follow the offset
-    fn draw_hud(&self, _ctx: &mut Context, _state: &State) -> GgezResult { Ok(()) }
+    fn draw_hud(&self, _ctx: &mut Context, _state: &State, _: &ObjectSet) -> GgezResult { Ok(()) }
 }

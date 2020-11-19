@@ -34,16 +34,16 @@ impl Game for WalkingBoxGame {
                 rot: 0.,
             }, |data, ctx, state, delta| {
                 if state.is_down(ctx, UP) {
-                    data.pos.y += SPEED * delta;
-                }
-                if state.is_down(ctx, DOWN) {
                     data.pos.y -= SPEED * delta;
                 }
+                if state.is_down(ctx, DOWN) {
+                    data.pos.y += SPEED * delta;
+                }
                 if state.is_down(ctx, LEFT) {
-                    data.pos.x += SPEED * delta;
+                    data.pos.x -= SPEED * delta;
                 }
                 if state.is_down(ctx, RIGHT) {
-                    data.pos.x -= SPEED * delta;
+                    data.pos.x += SPEED * delta;
                 }
             }
         ));
